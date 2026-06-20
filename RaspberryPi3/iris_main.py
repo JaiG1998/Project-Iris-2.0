@@ -1,22 +1,64 @@
 import os
 import cv2
+import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import firebase_admin
 from firebase_admin import credentials, db
 
-def main():
-    print("Initializing IRIS")
+def process_and_analyze_image(client, system_instruction):
+    """
+    Handles hardware camera capture, optimizes image payloads in memory, 
+    and requests scene analysis from Gemini 2.5 Flash.
+    """
+    # 1. Interface with the webcam
+    camera_port = 0 
+    camera = cv2.VideoCapture(camera_port)
     
-    # 1. Load configuration safely from .env file
+    if not camera.isOpened():
+        print("ERROR: Webcam could not be accessed. Verify connection.")
+        return "Error: Could not access the Raspberry Pi camera module."
+
+    print("📸 Trigger received! Capturing image environment...")
+    retval, frame = camera.read()
+    camera.release()  # Release hardware lock immediately
+
+    if not retval:
+        print("ERROR: Failed to capture frames from webcam.")
+        return "Error: Camera failed to capture a clear frame."
+
+    # 2. Optimization: Compress image straight to memory bytes (Zero Disk I/O delay)
+    retval, buffer = cv2.imencode('.jpg', frame)
+    image_bytes = buffer.tobytes()
+
+    print("🧠 Sending optimized payload to Gemini 2.5 Flash...")
+
+    try:
+        # 3. Request content generation
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
+                system_instruction
+            ]
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"Gemini API Exception: {e}")
+        return "Error: Gemini analysis engine timed out."
+
+def main():
+    print("Initializing IRIS Core Engine...")
+    
+    # Load configuration safely from .env file
     load_dotenv()
     gemini_key = os.getenv("GEMINI_API_KEY")
     if not gemini_key:
         print("CRITICAL ERROR: GEMINI_API_KEY not found in .env file.")
         return
 
-    # 2. Securely initialize Firebase Admin SDK using your credentials
+    # Securely initialize Firebase Admin SDK
     try:
         cred = credentials.Certificate("iris-firebase-credentials.json")
         firebase_admin.initialize_app(cred, {
@@ -27,34 +69,10 @@ def main():
         print(f"CRITICAL ERROR: Failed to initialize Firebase: {e}")
         return
 
-    # 3. Initialize the modern Google GenAI client
+    # Initialize the Google GenAI client
     client = genai.Client(api_key=gemini_key)
 
-    # 4. Interface with the webcam
-    # We try port 0 first, which is standard for USB webcams on Raspberry Pi
-    camera_port = 0 
-    camera = cv2.VideoCapture(camera_port)
-    
-    if not camera.isOpened():
-        print("ERROR: Webcam could not be accessed. Verify connection or check camera port.")
-        return
-
-    print("-> Capturing image environment...")
-    retval, frame = camera.read()
-    camera.release()  # Release the hardware camera immediately so other processes aren't blocked
-
-    if not retval:
-        print("ERROR: Failed to capture frames from webcam.")
-        return
-
-    # 5. Optimization: Compress image straight to memory bytes (Zero Disk I/O delay)
-    retval, buffer = cv2.imencode('.jpg', frame)
-    image_bytes = buffer.tobytes()
-
-    print("-> Image captured. Sending optimized payload to Gemini 2.5 Flash...")
-
-    # 6. Assistive Prompt Engineering 
-    # This guides the model to act specifically as a mobility and context helper
+    # Assistive Prompt Engineering 
     system_instruction = (
         "You are IRIS, an assistive AI companion for a blind person. "
         "Describe what is directly in front of the user clearly and concisely. "
@@ -63,27 +81,31 @@ def main():
         "Keep your description brief (under 3 sentences) so it can be smoothly spoken aloud."
     )
 
-    try:
-        # Request content generation using highly efficient multimodal Gemini 2.5 Flash
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
-                system_instruction
-            ]
-        )
-        
-        description = response.text.strip()
-        print(f"\n[IRIS Generated Scene Analysis]:\n\"{description}\"\n")
+    # Get reference to the communications node
+    ref = db.reference('/RaspberryString')
+    print("\n🚀 IRIS 2.0 Pi Core Online. Awaiting voice triggers from app...")
 
-        # 7. Push the string safely to your Firebase Realtime database node
-        # This replaces the old legacy 'RaspberryString' location with bulletproof writing rules
-        ref = db.reference('/RaspberryString')
-        ref.set(description)
-        print("-> Scene analysis successfully synchronized to Firebase Database!")
+    # Infinite processing loop
+    while True:
+        try:
+            # Check the current status in the cloud node
+            current_status = ref.get()
 
-    except Exception as e:
-        print(f"ERROR during processing or transmission: {e}")
+            if current_status == "TRIGGER":
+                # 1. Run the camera capture and analysis pipeline
+                description = process_and_analyze_image(client, system_instruction)
+                print(f"[IRIS Scene Output]: \"{description}\"")
+
+                # 2. Push the result right back into the exact same node!
+                # This overwrites "TRIGGER" so your app intercepts the speech text instantly
+                ref.set(description)
+                print("-> Scene analysis pushed back to app via Firebase.")
+
+        except Exception as e:
+            print(f"Loop Alert: {e}")
+
+        # Sleep for 1 second between checks to manage Pi CPU cycles cleanly
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
