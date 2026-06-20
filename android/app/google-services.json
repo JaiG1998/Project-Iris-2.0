@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "794965221170",
+    "firebase_url": "https://iris-50bfb-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "iris-50bfb",
+    "storage_bucket": "iris-50bfb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:794965221170:android:60ff48f39f3fa3a7afc12b",
+        "android_client_info": {
+          "package_name": "com.example.iris_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCm1tvV_UB0FHgBJSO3_Cx_FO6wFzJ6ZBk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
